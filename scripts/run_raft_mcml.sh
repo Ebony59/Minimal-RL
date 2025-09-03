@@ -1,7 +1,8 @@
 #!/bin/bash
-#SBATCH -p lrz-hgx-h100-94x4
+#SBATCH -p mcml-hgx-h100-94x4
+#SBATCH -q mcml
 #SBATCH --gres=gpu:4
-#SBATCH --output=sft.txt
+#SBATCH --output=sft-mcml.txt
 #SBATCH --cpus-per-task=32
 #SBATCH --time=2-00:00:00
 
@@ -28,17 +29,32 @@ export NCCL_SOCKET_IFNAME=^docker0,lo
 export RAY_TMPDIR=/dss/dssfs05/pn39qo/pn39qo-dss-0001/tmp
 mkdir -p $RAY_TMPDIR
 
+# Triton cache
+export TRITON_CACHE_DIR=${RAY_TMPDIR}/triton_cache_${SLURM_JOB_ID}
+mkdir -p $TRITON_CACHE_DIR
+
+# PyTorch / Verl caches
+export TORCH_HOME=${RAY_TMPDIR}/torch_cache
+mkdir -p $TORCH_HOME
+export TRANSFORMERS_CACHE=${TORCH_HOME}/transformers
+mkdir -p $TRANSFORMERS_CACHE
+
+# Wandb cache (optional)
+export WANDB_CACHE_DIR=${RAY_TMPDIR}/wandb
+mkdir -p $WANDB_CACHE_DIR
+
 data=numina_math
 project_name=raft++
 algorithm=raft
-model=Qwen2.5-Math-1.5B
+model=Qwen2.5-3B
 model_name_or_path=Qwen/$model
 policy_loss=vanilla # vanilla, plusplus (importance sample + clipping)
 n=4
 experiment_name=${model}-${algorithm}-${policy_loss}-${data}-n${n}
-my_world_size=1
+my_world_size=4
 
-math_train_path=./data/$data/train.parquet
+#math_train_path=./data/$data/train.parquet
+math_train_path=./data/math500/train.parquet
 math_test_path=./data/math500/test.parquet 
 
 train_files="['$math_train_path']"
@@ -72,7 +88,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=$algorithm \
     data.train_files="$train_files" \
     data.val_files="$test_files" \
-    data.train_batch_size=1024 \
+    data.train_batch_size=256 \
     data.max_prompt_length=1024 \
     data.max_response_length=3072 \
     data.filter_overlong_prompts=True \
@@ -80,7 +96,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=256 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
@@ -88,11 +104,11 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.kl_loss_coef=0.001 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.policy_loss=$policy_loss \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
     actor_rollout_ref.rollout.n=$n \
-    actor_rollout_ref.rollout.max_num_batched_tokens=8192 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=4096 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.kl_ctrl.kl_coef=0.001 \
     trainer.critic_warmup=0 \

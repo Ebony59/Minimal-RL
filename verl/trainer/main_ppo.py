@@ -69,9 +69,10 @@ def run_ppo(config) -> None:
             'env_vars': {
                 'TOKENIZERS_PARALLELISM': 'true',
                 'NCCL_DEBUG': 'WARN',
-                'VLLM_LOGGING_LEVEL': 'WARN'
-            }
-        })
+                'VLLM_LOGGING_LEVEL': 'WARN'},
+            },
+            num_cpus=32,
+        )
 
     runner = TaskRunner.remote()
     ray.get(runner.run.remote(config))
